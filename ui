@@ -1,0 +1,192 @@
+library(shinydashboard)
+library('rmapshaper')
+library(treemap)
+library(shiny)
+library(shinydashboard)
+library(raster)
+library(rgeos)
+library(maptools)
+library(rgdal)
+library(leaflet)
+library(dplyr)
+library(ggmap)
+library(ggplot2)
+library(devtools)
+library(raster)
+library(rgeos)
+library(maptools)
+library(rgdal)
+library(sp)
+library(dplyr)
+library(leaflet)
+library(rmapshaper)
+library(gganimate)
+library(tidyr)
+library(markdown)
+library(data.table)
+library(bit64)
+library(gifski)
+library(data.table)
+library(ggmap)
+library(ggplot2)
+library(shiny)
+
+# Define UI for application that draws a histogram
+ui <- dashboardPage(
+
+    # Application title
+    dashboardHeader(title = "SW Festival Data Visualization"),
+    dashboardSidebar(
+        sidebarMenu(
+            menuItem('전국 코로나', tabName = 'dashboard1', icon = icon('table')),
+            menuItem('서울 코로나 & 유동인구1', tabName = 'dashboard2', icon = icon('dashboard')),
+            menuItem('서울 코로나 & 유동인구2', tabName = 'dashboard3', icon = icon("calendar")),
+            menuItem('서울 Best, Worst 업종', tabName = 'dashboard4', icon = icon('dashboard')),
+            menuItem('서울 상권 분석 플랫폼', tabName = 'dashboard5', icon = icon('check'))
+        )
+        
+    ), 
+    dashboardBody(
+        tabItems(
+            tabItem(tabName = 'dashboard1', 
+                    fluidRow(
+                        h3(strong("전국 지역별 확진자 현황")),
+                        column(7, wellPanel(
+                            h4("전국 확진자 분포 트리맵"),
+                            plotOutput("treeplot", width = "100%", height = 400)
+                        )),
+                        column(5, wellPanel(
+                            h4("전국 확진자 분포 지도"),
+                            leafletOutput("leafletPlot", width = "100%", height = 400)
+                            
+                        )), 
+                        column(6, wellPanel(
+                            h4("지역별 확진자 분포 지도"),
+                            plotOutput("map_ggplot", width = "90%", height = 400)
+                        )), 
+                        column(6, wellPanel(
+                            h4("지역별 코로나 확진자 수"),
+                            plotOutput("barplot", width = "90%", height = 400)
+                        ))
+                )), 
+        tabItem(tabName = 'dashboard2', 
+                fluidRow(
+                    h3(strong("서울시 유동인구 추이")),
+                    column(1), 
+                    column(5, wellPanel(
+                        h4('2020 서울 유동인구'),
+                        plotOutput("fluid_plot", width = "100%", height = 500),
+                        p('코로나 사건 정리 및 서울시 유동인구 추이'),
+                        p('유동인구의 트렌드 파악을 위해 19년도 유동인구 추가')
+                    )), 
+                    column(5, wellPanel(
+                        h4('서울시 주차별 유동인구'),
+                        imageOutput('animate_plot', width = "100%", height = 500),
+                        p('지역별 유동인구 변화 주차별 분석'),
+                        p('4주차에 전반적으로 감소, 8주차에 전반적으로 증가')
+                    ))
+                )
+                ), 
+        tabItem(tabName = 'dashboard3', 
+                fluidRow(
+                    h3(strong("행정구역별 월별 확진자 및 19년도 대비 유동인구")),
+                    column(2, wellPanel(
+                        selectInput(
+                            'month',
+                            '달을 선택하시오',
+                            choices=c('1','2','3','4','5','6','7','8','9'),
+                            selected=NULL
+                        )
+                    )),
+                    column(5, wellPanel(
+                        h4('서울시 행정구역별 월별 확진자'),
+                        plotOutput("distPlot", width = "100%", height = 500)
+                    )), 
+                    column(5, wellPanel(
+                        h4('서울시 행정구역별 19년도 대비 유동인구'),
+                        plotOutput("fluid_map_plot", width = "100%", height = 500)
+                    ))
+                )),
+        tabItem(tabName = 'dashboard4', 
+                fluidRow(
+                    h3(strong("지역별 카드 매출 금액 및 거래 건수 추이")),
+                    column(1), 
+                    column(5, wellPanel(
+                        h4('지역별 best & worst 취급액 업종'),
+                        img(src='KakaoTalk_20201027_230830965.png', height=500,width=500)
+                    )), 
+                    column(5, wellPanel(
+                        h4('지역별 best & worst 거래 건수 업종'),
+                        img(src='KakaoTalk_20201027_230830965_01.png', height=500,width=500)
+                    ))
+                    
+                )
+                ),
+        tabItem(tabName = 'dashboard5', 
+                fluidRow(
+                    h3(strong("서초구 상권 분석 플랫폼")),
+                    column(4, wellPanel(
+                        selectInput("field_selection", 
+                                    "업종을 선택하시오", 
+                                    c('all', 
+                                      "가방", 
+                                      '가전제품', 
+                                      '기타숙박업',
+                                      '기타음료식품',
+                                      '노래방', 
+                                      '농축수산품', 
+                                      '동물병원', 
+                                      '미용원', 
+                                      '보습학원',
+                                      '사무서비스', 
+                                      '사진관', 
+                                      '서양음식', 
+                                      '세탁소', 
+                                      '슈퍼마켓', 
+                                      '시계', 
+                                      '아동의류', 
+                                      '안경', '약국', 
+                                      '예체능학원', '외국어학원', 
+                                      '의료용품', 
+                                      '의원', 
+                                      '인테리어', 
+                                      '일반가구', 
+                                      '일반한식', 
+                                      '일식회집', 
+                                      '자동차부품', 
+                                      '정육점', 
+                                      '제과점', 
+                                      '주유소', 
+                                      '주점', 
+                                      '중국음식', 
+                                      '치과의원', 
+                                      '컴퓨터', 
+                                      '편의점', 
+                                      '피부미용실', 
+                                      '한의원', 
+                                      '헬스크럽', 
+                                      '화원', '화장품'),
+                                    NULL), 
+                        h4('확진자, 유동인구로 계산한 구별 상권 랭킹'),
+                        plotOutput('rank_plot', width = '100%', height = 320)
+                    )), 
+                    column(6, wellPanel(
+                        h4('법정동별 상권분석 점수 지도'),
+                        plotOutput('gou_plot', width = '100%', height = 400)
+                    )), 
+                    column(6, wellPanel(
+                        h4('행정구역의 법정동별 상권분석 점수'),
+                        plotOutput('radar_plot', width = '100%', height = 400)
+                    )), 
+                    column(6, wellPanel(
+                        h4('점포수 현황'),
+                        leafletOutput('location_plot', width = '100%', height = 400)
+                    ))
+                ))
+        
+    )
+    )
+    )
+
+    
+
