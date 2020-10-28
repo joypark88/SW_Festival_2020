@@ -1,0 +1,190 @@
+server <- function(input, output) {
+    
+    output$treeplot <- renderPlot({
+        treemap(korea_tree,
+                index = 'CTP_KOR_NM', # 계층 구조
+                vSize = 'confirmed', # 타일 크기
+                vColor= 'log_confirmed', # 타일 컬러
+                type = 'index', # 타일컬러링방법
+                bg.labels = 'red', # 레이블배경색
+                title = "한국 지역별 코로나 확진자", 
+                fontsize.labels=25,lowerbound.cex.labels= 0.1)
+    })
+    output$leafletPlot <- renderLeaflet({
+        leaflet(korea3) %>%
+            setView(lng=127.7669,lat=35.90776, zoom=6.3) %>%
+            addProviderTiles('CartoDB.Positron') %>%
+            addPolygons(color='#444', weight=1, fillColor=~pal2(log10(confirmed))) %>% 
+            addLegend(pal = pal2, values = ~log10(confirmed), opacity = 0.7, title = '확진자 수',
+                      position = "bottomright")
+    })
+    output$map_ggplot <- renderPlot({
+        korea_map %>% 
+            ggplot(aes(x = long, y = lat, group = group, fill = log10(confirmed)))+
+            geom_polygon(col = 'black') +facet_wrap(.~CTP_KOR_NM, scale = 'free' ) + 
+            scale_fill_gradient2(low='blue',mid = 'yellow', high = 'red',breaks = c(2, 3), labels = c('100명', '1000명') ) + 
+            theme_gray() + ggtitle("코로나 확진자 수") + theme(plot.title = element_text(size = 20))
+    })
+    output$barplot <- renderPlot({
+        korea_tree %>% ggplot(aes(x = reorder(CTP_KOR_NM, -confirmed), y = confirmed)) +
+            geom_bar(stat = 'identity') + coord_flip() + labs(x = '지역명', y = '확진자 수') + ggtitle("지역별 코로나 확진자 수") + 
+            theme(plot.title = element_text(size = 20)) + geom_text(aes(label= confirmed), nudge_y = 240)
+    })
+    
+    output$best_worst <- renderImage({
+        list(src='KakaoTalk_20201027_230830965.png')
+    }, deleteFile=F)
+    
+    
+    
+    gou_data <- reactive({ 
+        all_joined %>% dplyr::select(starts_with(input$field_selection), `행정지역`)
+    })
+    
+    gou_data2 <- reactive({ 
+        adjust_seocho_data2 %>% dplyr::select(starts_with(input$field_selection), `행정구역`, `소득분위`, `가구수`, `임대료`, `유동인구`)
+    })
+    
+    
+    output$gou_plot <- renderPlot({
+        data <- gou_data()
+        data$total_score <- rowSums(data[-ncol(data)])
+        googleAPTkey <- 'AIzaSyDeC_jz2uKBVSZD7I6-f2IM8zuAV-AsyoA'
+        
+        register_google(key=googleAPTkey)
+        
+        gc <- geocode(enc2utf8("서초구"))
+        
+        gc <- as.numeric(gc)
+        
+        gc[2] <- 37.47571
+        
+        getmap <- get_googlemap(center = gc, zoom=13,size=c(690,690), maptype='roadmap')
+        
+        map_dong_seocho %>% 
+            left_join(data, by=c('동명'='행정지역')) %>%
+            filter(동명 %in% c('방배동','양재동','잠원동','반포동','서초동','내곡동')) -> df1
+        map_dong_seocho %>% 
+            left_join(data, by=c('동명'='행정지역')) %>%
+            filter(동명 %in% c('우면동','원지동','염곡동','신원동')) -> df2
+        
+        ggmap(getmap)+geom_polygon(data=df1, aes(x=long, y=lat, group=group, fill=total_score, alpha=0.4), col='black')+
+            scale_fill_gradient(low='yellow', high='green', breaks = c(5,15)) +
+            geom_polygon(data=df2, aes(x=long, y=lat, group=group), fill='white', col='black')+
+            geom_text(data=map_dong_text, aes(x=long, y=lat,label=동명)) + 
+            ggtitle('법정동별 상권분석 점수 지도')+
+            theme(plot.title=element_text(size=20))
+    })
+    
+    
+    output$radar_plot <- renderPlot({
+        data2 <- gou_data2()
+        
+        data2  %>% gather(region, value, -행정구역) %>%
+            arrange(region) %>%
+            ggplot(aes(x=region, y=value, group=행정구역, colour=행정구역, fill=행정구역))+
+            geom_point()+geom_polygon(alpha=0.2)+coord_radar()+facet_wrap(~행정구역) + 
+            ggtitle('법정동별 상권 점수') + 
+            ggtitle('행정구역의 법정동별 상권분석 점수')+
+            theme(plot.title=element_text(size=20))
+    })
+    
+    murchant <- reactive({ 
+        seoul_dorm_and_food %>%filter(`영업자성명` == input$field_selection, )
+    })
+    
+    output$location_plot <- renderLeaflet({
+        leaflet(murchant()) %>%
+            addTiles() %>%
+            addMarkers(lng=~Longitude, lat=~Latitude, clusterOptions = markerClusterOptions()) 
+    })
+    
+    data <- reactive({new_confirms %>% arrange(order) %>% filter(month==input$month)})
+    output$distPlot <- renderPlot({
+        datas <- data()
+        datas %>% ggplot() + geom_polygon(aes(x=long, y=lat, group=group, fill=sum_n))+
+            scale_fill_gradient(low = "#ffe5e5", high = "#ff3232", space = "Lab", guide = "colourbar") +
+            theme_void()+
+            theme(panel.grid.minor.x = element_blank(),
+                  panel.grid.minor.y = element_blank(),
+                  panel.grid.major.x = element_blank(),
+                  panel.grid.major.y = element_blank())+
+            geom_text(data=seoul_locate_confirmed,
+                      aes(x=경도, y=위도, label=시군구명_한글))+ggtitle('서울시 월별 확진자 추이')+
+            theme(plot.title=element_text(size=20))
+        
+    })
+    
+    output$fluid_plot <- renderPlot({
+        seoulfloat %>% 
+            ggplot(aes(x=weeks, y = mean.x)) + geom_line(col = 'black') + 
+            geom_line(aes(x = weeks, y = mean.y), col = 'gray', linetype = 2)+
+            theme_bw()+
+            geom_rect(data=period1, aes(x=NULL, y=NULL, xmin=begin, xmax=end, ymin=min(seoul_total_byweek$sum), ymax=max(seoul_total_byweek$sum)), fill='orange',alpha=0.2)+
+            geom_rect(data=period2, aes(x=NULL, y=NULL, xmin=begin, xmax=end, ymin=min(seoul_total_byweek$sum), ymax=max(seoul_total_byweek$sum)),fill='red',alpha=0.2)+
+            geom_rect(data=period3, aes(x=NULL, y=NULL, xmin=begin, xmax=end, ymin=min(seoul_total_byweek$sum), ymax=max(seoul_total_byweek$sum)),fill='yellow',alpha=0.2)+
+            geom_vline(xintercept=week(as.Date('2020-01-20')),col='red')+
+            geom_vline(xintercept=week(as.Date('2020-02-20')),col='red')+
+            geom_vline(xintercept=17,col='red')+
+            ggplot2::annotate("text", x=week(as.Date('2020-01-20')), y=27500, label="첫 확진자 발생",size=3)+
+            ggplot2::annotate("text", x=week(as.Date('2020-02-20')), y=27000, label="31번환자발생", size=3)+
+            ggplot2::annotate("text", x=week(as.Date('2020-03-10')), y=28000, label="위기경보단계 '심각'", size=4)+
+            ggplot2::annotate("text", x=week(as.Date('2020-04-01')), y=27500, label="강화된 사회적거리두기", size=4)+
+            ggplot2::annotate("text", x=week(as.Date('2020-04-28')), y=28000, label="생활속거리두기", size=4)+
+            ggplot2::annotate("text", x=17, y=26000, label="이태원클럽사건", size=3) + ggtitle('2020 서울 유동인구')+ 
+            ggplot2::annotate("text", x=21.5, y=27000, label="19년도유동인구", size=3, col = 'gray')+
+            ggplot2::annotate("text", x=21.5, y=27100, label="20년도유동인구", size=3, col='black') +
+            ggtitle('2020 서울 유동인구')+theme(plot.title=element_text(size=20))
+    })
+    
+    output$fluid_map_plot <- renderPlot({
+        float_19_sum %>% 
+            ggplot() + geom_polygon(aes(x=long, y=lat, group=group, fill=differ))+
+            scale_fill_gradient(low = "lightblue", high = "darkblue", space = "Lab", guide = "colourbar")+
+            theme_void()+
+            theme(panel.grid.minor.x = element_blank(),
+                  panel.grid.minor.y = element_blank(),
+                  panel.grid.major.x = element_blank(),
+                  panel.grid.major.y = element_blank(),
+                  legend.position='none')+
+            geom_text(data=locate,
+                      aes(x=경도, y=위도, label=paste(시군구명_한글, round(sum,2), sep='\n')))+
+            ggtitle("코로나 이전(19년도) 대비 유동인구 추이")+theme(plot.title=element_text(size=20))
+    })
+    
+    output$animate_plot <- renderImage({
+        outfile <- tempfile(fileext='.gif')
+        
+        gg_info <- floating_for_animation %>% 
+            ggplot()+geom_col(aes(x=city, y=sum,fill=city))+
+            coord_flip()+theme(legend.position='none')+ggtitle('주차별 유동인구 추이')+theme(plot.title=element_text(size=20))
+        
+        anim = gg_info + transition_states(weeks)+ease_aes('sine-in-out')+
+            labs(title="주차별 유동인구 : {closest_state}")
+        
+        anim_save('outfile.gif', gganimate::animate(anim, fps=7,renderer = gifski_renderer()))
+        
+        list(src = 'outfile.gif',
+             contentType='image/gif')}, deleteFile=TRUE)
+    
+    output$rank_plot <- renderPlot({
+        float_19_sum %>%
+            left_join(test) %>% 
+            left_join(total_rank, by='city') %>% ggplot() + geom_polygon(aes(x=long, y=lat, group=group, fill=total_rank))+
+            scale_fill_gradient(low = "blue", high = "white", space = "Lab", guide = "colourbar")+
+            theme_void()+
+            theme(panel.grid.minor.x = element_blank(),
+                  panel.grid.minor.y = element_blank(),
+                  panel.grid.major.x = element_blank(),
+                  panel.grid.major.y = element_blank(),
+                  legend.position='none')+
+            geom_text(data=located,
+                      aes(x=경도, y=위도, label=paste(시군구명_한글,total_rank, sep='\n')))+
+            ggtitle("코로나 이전(19년도) 대비 유동인구 추이") 
+    })
+    
+
+}
+
+# Run the application 
+shinyApp(ui = ui, server = server)
